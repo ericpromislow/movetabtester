@@ -142,7 +142,6 @@ function selectRange(lastClickedIndex, currentIndex) {
 function onListItemClick(event) {
     var i = event.target.actualIndex;
     var mask = getModifierMask(event);
-    console.log(`QQQ: onListItemClick: mask: ${mask}`);
     
     if (mask == SHIFT_KEY && lastClickedIndex > -1) {
         selectRange(lastClickedIndex, i);
@@ -254,7 +253,7 @@ function moveFull(indexAdjuster_cb) {
     let moveProperties = { windowId: targetWindowID,
 			   index: targetIndex };
     let reportOK = function() {
-	console.log(`QQQ: moved ${tabIdsToMove.length} tabs to window ${targetWindowID}:${targetIndex}`);
+	//console.log(`QQQ: moved ${tabIdsToMove.length} tabs to window ${targetWindowID}:${targetIndex}`);
 	setTimeout(populateTabList, 50);
     };
     browser.tabs.move(tabIdsToMove, moveProperties).then(reportOK, reportErr);
@@ -327,10 +326,10 @@ function moveTabsToAnotherTab(origTabIds, targetIndex, tabInfo, indexAdjuster_cb
         let selectMovedTargetNodes = function(attempt) {
 	    let itemIndices = origTabIds.map((origTabId) => (
 		items.findIndex((item) => item.tabID == origTabId)));
-	    console.log(`QQQ: origTabIds:${origTabIds}, itemIndices:${itemIndices}`);
+	    // console.log(`QQQ: origTabIds:${origTabIds}, itemIndices:${itemIndices}`);
 	    let matchedItemIndices = itemIndices.map((matchedItemIndex) =>
 						     items.indexOf(matchedItemIndex));
-	    console.log(`QQQ: matchedItemIndices:${matchedItemIndices}`);
+	    // console.log(`QQQ: matchedItemIndices:${matchedItemIndices}`);
 	    if (matchedItemIndices.every((index) => index >= 0)) {
 		matchedItemIndices.forEach((matchedItemIndex) => {
                     tablist.childNodes[matchedItemIndex].classList.add('selected');
@@ -365,7 +364,7 @@ function moveTabsToAnotherTab(origTabIds, targetIndex, tabInfo, indexAdjuster_cb
                 targetIndex -= 1;
             }
             moveProperties.index = targetIndex;
-	    console.log(`QQQ: move tab ${tabIdToMove} to window ${targetWindowID}, tab index ${targetIndex}`);
+	    // console.log(`QQQ: move tab ${tabIdToMove} to window ${targetWindowID}, tab index ${targetIndex}`);
             browser.tabs.move(tabIdToMove, moveProperties).then(deferredMoveNextTabFunc, reportErr);
 
         };

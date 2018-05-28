@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -ex
+
+version=<%= ENV['VERSION'] or die("movetabtester/build.sh.erb: VERSION not set") %>
+target=<%= ENV['TARGET'] or die("movetabtester/build.sh.erb: TARGET not set") %>
+
+zip -r build/movetabtester-${target}-${version}.zip LICENSE.txt README.md \
+   _locales/ icons/ manifest.json \
+   popup/movetabtester.{css,html,js} \
+   popup/jquery-3.2.1.min.js \
+   popup/images \
+<% if ENV['TARGET'] == 'chrome' %>
+   popup/browser-polyfill.min.js \
+<% end %>
+   -x '*~'

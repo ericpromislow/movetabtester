@@ -1,0 +1,472 @@
+// movetabtester.js -- See LICENSE.txt for copyright and license details. 
+
+var thMainFunc = (function() {
+
+var items = [];
+var selectedIndex;    // visible
+var lastClickedIndex; // visible
+var tablist;
+
+var selectWindowTargetWidget;
+var selectTabTargetWidget;
+var lastSelectedWindow = 1, lastSelectedTab = 0;
+
+var g_windowInfoArray;
+
+var g_currentItemHeight = null;
+const DEFAULT_BASE_FONT_SIZE = 12;
+
+var moveButtons = {};
+
+const SHIFT_KEY = 1;
+const CTRL_KEY = 2;
+const ALT_KEY = 4;
+
+function init() {
+    var list = document.getElementById("list");
+    tablist = list;
+
+    ["moveNaiveFull", "moveNaiveIndividually", "moveOffsetFull",
+     "moveOffsetIndividually"].forEach((name) => {
+	 let b = document.getElementById(name)
+	 moveButtons[name] = b;
+	 b.addEventListener("mouseup", doMoveFunc[name]);
+     });
+
+    selectWindowTargetWidget = document.getElementById("windowList");
+    selectTabTargetWidget =  document.getElementById("tabList");
+    selectWindowTargetWidget.addEventListener("change", function(event) {
+	lastSelectedWindow = selectWindowTargetWidget.selectedIndex + 1;
+	populateTabPicker();
+    });
+    selectTabTargetWidget.addEventListener("change", function(event) {
+	lastSelectedTab = selectTabTargetWidget.selectedIndex;
+    });
+
+    $("button").mouseover(doMouseOver);
+    $("button").mouseout(doMouseOut);
+    $("button").mousedown(doMouseDown);
+    $("button").mouseup(doMouseUp);
+    populateTabList();
+}
+
+function WindowIndexThing() {
+    this.currentIndex = 0;
+    this.indicesByID = {};
+}
+WindowIndexThing.prototype = {
+    intern: function(windowID) {
+        if (windowID in this.indicesByID) {
+            return this.indicesByID[windowID];
+        }
+        this.currentIndex += 1;
+        this.indicesByID[windowID] = this.currentIndex;
+        return this.currentIndex;
+    },
+    index: function(windowID) {
+        return this.indicesByID[windowID];
+    },
+    __EOT__: null
+}
+var windowCounter = new WindowIndexThing();
+
+// Tabs: save [title, url, window#id, tab#id, tab#index, tab#favIconUrl, tab#audible] 
+function makeTabItem(id, tab) {
+    windowCounter.intern(id);
+    return {
+      title: tab.title,
+      url: tab.url,
+      windowID: id,
+      tabID: tab.id,
+      tabIndex: tab.index,
+      favIconUrl: tab.favIconUrl,
+      audible: tab.audible
+    };
+}
+
+function isForbiddenFavIconUrl(url) {
+    return ['chrome://mozapps/skin/extensions/extensionGeneric-16.svg',
+           'chrome://mozapps/skin/extensions/extensionGeneric-16.png'].indexOf(url) >= 0;
+}
+
+function compareByWindowTab(tab1, tab2) {
+    let windowID1 = tab1.windowID;
+    let windowID2 = tab2.windowID;
+    if (windowID1 < windowID2) return -1;
+    if (windowID1 > windowID2) return 1;
+    let tabIndex1 = tab1.tabIndex;
+    let tabIndex2 = tab2.tabIndex;
+    return tabIndex1 - tabIndex2;
+}
+
+function pluralize(amt, term) {
+    var suffix = (amt == 1) ? "" : "s";
+    return `${amt} ${term}${suffix}`;
+}
+
+function populateTabList() {
+    selectedIndex = 0;
+    lastClickedIndex = -1;
+
+    const getAllProperties = {populate: true, windowTypes: ['normal']}
+    const errGetAllWindows = function(err) {
+        console.log(`movetabtester: errGetAllWindows: err: ${err}`);
+    }
+    
+    const doGetAllWindows = function (windowInfoArray) {
+        g_windowInfoArray = windowInfoArray;
+        items.splice(0); // clear
+        for (var windowInfo of windowInfoArray) {
+            var id = windowInfo.id;
+            var tabs = windowInfo.tabs;
+            for (var tab of tabs) {
+                // Tabs: save [title, url, window#id, tab#id, tab#index, tab#favIconUrl
+                items.push(makeTabItem(id, tab));
+            }
+        }
+        items.sort(compareByWindowTab);
+	makeListFromMatchedItems();
+    };
+    browser.windows.getAll(getAllProperties).then(doGetAllWindows, errGetAllWindows);
+}
+
+function selectRange(lastClickedIndex, currentIndex) {
+    if (lastClickedIndex > currentIndex) {
+        [lastClickedIndex, currentIndex] = [currentIndex, lastClickedIndex];
+    }
+    for (var i = lastClickedIndex; i <= currentIndex; i++) {
+        tablist.childNodes[i].setAttribute("class", "selected");
+    }
+}
+
+function onListItemClick(event) {
+    var i = event.target.actualIndex;
+    var mask = getModifierMask(event);
+    console.log(`QQQ: onListItemClick: mask: ${mask}`);
+    
+    if (mask == SHIFT_KEY && lastClickedIndex > -1) {
+        selectRange(lastClickedIndex, i);
+    } else if (mask == CTRL_KEY) {
+        $(this).toggleClass('selected');
+    } else {
+        $("ul li").removeClass('selected');
+        $(this).addClass('selected');
+    }
+    selectedIndex = i;
+    lastClickedIndex = (mask & (SHIFT_KEY|CTRL_KEY)) == 0 ? i : -1;
+    event.stopPropagation();
+    event.preventDefault();
+    updateButtons();
+}
+ 
+function getModifierMask(event) {
+    return (0 |
+            (event.shiftKey ? SHIFT_KEY : 0 ) |
+            (event.ctrlKey ? CTRL_KEY : 0 ) |
+            (event.altKey ? ALT_KEY : 0 ) |
+            (event.metaKey ?  CTRL_KEY: 0 ) |
+            (event.commandKey ? CTRL_KEY : 0 ));
+}
+
+function setStatusBarMessage(msg) {
+    $("div#statusbar").removeClass("hide").addClass("show");
+    $("p#statusbar-p").text(msg);
+    setTimeout(function() {
+        $("div#statusbar").removeClass("show").addClass("hide");
+        $("p#statusbar-p").text("");
+    }, 30* 1000);
+}
+
+function makeListFromMatchedItems() {
+    var selectedItems = getSelectedItemsJQ();
+    var selectedActualIndices = selectedItems.map(function(elt) { return elt.actualIndex });
+    var lastClickedActualIndex = items[lastClickedIndex];
+    var selectedActualIndex = items[selectedIndex];
+    $("#list").empty();
+    $("ul li").off("click", onListItemClick);
+    selectedIndex = 0;
+    lastClickedIndex = -1;
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var el = document.createElement("li");
+        // Add 1 because not all movetabtester users are proggers
+        el.textContent = `[${windowCounter.index(item.windowID)}:${item.tabIndex + 1}] `;
+        el.textContent += item.title + " - " + item.url;
+        el.actualIndex = i;
+        if (item.favIconUrl && !isForbiddenFavIconUrl(item.favIconUrl)) {
+            el.style.backgroundImage = "url(" + item.favIconUrl + ")";
+        }
+        if (selectedActualIndices.indexOf(i) >= 0) {
+            $(el).addClass("selected");
+            if (i == selectedActualIndex) {
+                selectedIndex = i;
+            }
+        }
+        if (lastClickedIndex > -1 && i == lastClickedActualIndex) {
+            lastClickedIndex = i;
+        }
+        tablist.appendChild(el);
+    }
+    $("ul li:eq(" + selectedIndex + ")").select();
+    $("ul li").on("click", onListItemClick);
+
+    populateWindowPicker();
+    updateButtons();
+}
+
+function updateButtons() {
+    var selectedItemLength = getSelectedItemsJQ().length;
+    if (selectedItemLength > 0) {
+	for (let name in moveButtons) {
+	    moveButtons[name].disabled = selectedItemLength == 0;
+	}
+    }
+}
+
+function getSelectedItems() {
+    return getSelectedItemsJQ().map(function(selectedItem) { return items[selectedItem.actualIndex]; });
+}
+
+function getTargetWindowId() {
+    let options = selectWindowTargetWidget.selectedOptions;
+    return parseInt(options.item(0).value, 10);
+}
+
+function getTargetIndex() {
+    let targetWindowId = getTargetWindowId();
+    let options = selectTabTargetWidget.selectedOptions;
+    let tabIndex = parseInt(options.item(0).value, 10);
+    let tabNode = items.find((item) => item.windowID == targetWindowId && item.tabIndex == tabIndex);
+    return [tabNode, tabIndex];
+}
+
+function reportErr(err) {
+    console.log("error moving tabs: " + err);
+}
+
+function moveFull(indexAdjuster_cb) {
+    let selectedItems = getSelectedItemsJQ();
+    let targetWindowID = getTargetWindowId();
+    let tabItemsToMove = selectedItems.
+	map((selectedItem) => items[selectedItem.actualIndex]);
+    let targetIndex = indexAdjuster_cb(targetWindowID, tabItemsToMove);
+    let tabIdsToMove = tabItemsToMove.map((item) => item.tabID);
+    let moveProperties = { windowId: targetWindowID,
+			   index: targetIndex };
+    let reportOK = function() {
+	console.log(`QQQ: moved ${tabIdsToMove.length} tabs to window ${targetWindowID}:${targetIndex}`);
+	setTimeout(populateTabList, 50);
+    };
+    browser.tabs.move(tabIdsToMove, moveProperties).then(reportOK, reportErr);
+}
+
+function moveIndividually(indexAdjuster_cb) {
+    let selectedItems = getSelectedItemsJQ();
+    let tabItemsToMove = selectedItems.
+	map((selectedItem) => items[selectedItem.actualIndex]);
+    let tabIdsToMove = tabItemsToMove.map((item) => item.tabID);
+    let [targetTabInfo, targetIndex] = getTargetIndex();
+    moveTabsToAnotherTab(tabIdsToMove, targetIndex, targetTabInfo, indexAdjuster_cb);
+}
+
+function justReturnTargetIndex(targetWindowID, items) {
+    return getTargetIndex()[1];
+}
+
+function offsetTargetIndexIfNeeded(targetWindowID, items) {
+    let targetIndex = getTargetIndex()[1];
+    if (targetIndex == -1) {
+	return targetIndex;
+    } else if (items.some((item) => (item.windowID == targetWindowID
+				     && item.tabIndex <= targetIndex))) {
+	if (items.every((item) => (item.windowID == targetWindowID
+				   && item.tabIndex <= targetIndex))) {
+	    return targetIndex - 1;
+	} else if (items.some((item) => (item.windowID == targetWindowID
+					 && item.tabIndex > targetIndex))) {
+	    // But complain if we have a mix of source tabs before and after the target
+	    let s = "Can't offset-move a mix of tabs before and after the target index";
+	    alert(s);
+	    throw new Error(s);
+	}
+    }
+    // All tabs either to right of target or in another window
+    return targetIndex;
+}
+
+var doMoveFunc = {
+    "moveNaiveFull": function() {
+	moveFull(justReturnTargetIndex);
+    },
+    "moveOffsetFull":  function() {
+	moveFull(offsetTargetIndexIfNeeded);
+    },
+    "moveNaiveIndividually":  function() {
+	moveIndividually(justReturnTargetIndex);
+    },
+    "moveOffsetIndividually":  function() {
+	moveIndividually(offsetTargetIndexIfNeeded);
+    }
+};
+
+function getSelectedItemsJQ() {
+    return $("ul#list li.selected").toArray();
+}
+
+function moveTabsToAnotherTab(origTabIds, targetIndex, tabInfo, indexAdjuster_cb) {
+    try {
+        // Reverse if: not targetting end of table
+        //
+        // And use `[].concat` to make a copy
+        let tabIds = [].concat((targetIndex == -1) ? origTabIds : origTabIds.reverse());
+        let targetWindowID = tabInfo.windowID;
+        let windowInfo = g_windowInfoArray.find((win) => win.id == targetWindowID);
+        let tabIdsToLeftOfTarget = targetIndex == -1 ? windowInfo.tabs : windowInfo.tabs.filter((tabInfo) => tabInfo.index <= targetIndex).map((tabInfo) => tabInfo.id);
+        let moveProperties = { windowId: targetWindowID,
+                               index: targetIndex };
+        let selectMovedTargetNodes = function(attempt) {
+	    let itemIndices = origTabIds.map((origTabId) => (
+		items.findIndex((item) => item.tabID == origTabId)));
+	    console.log(`QQQ: origTabIds:${origTabIds}, itemIndices:${itemIndices}`);
+	    let matchedItemIndices = itemIndices.map((matchedItemIndex) =>
+						     items.indexOf(matchedItemIndex));
+	    console.log(`QQQ: matchedItemIndices:${matchedItemIndices}`);
+	    if (matchedItemIndices.every((index) => index >= 0)) {
+		matchedItemIndices.forEach((matchedItemIndex) => {
+                    tablist.childNodes[matchedItemIndex].classList.add('selected');
+		});
+            } else if (attempt <= 10) {
+                // Sometimes we haven't finished the various promises while updating
+                // the node list, so retry
+                setTimeout(selectMovedTargetNodes, attempt * 10, attempt + 1);
+            }
+        };
+	let moveNextTabFunc;
+        let populateTabListAndReselect = function() {
+            populateTabList();
+            setTimeout(selectMovedTargetNodes, 10, 1);
+        };
+        let deferredMoveNextTabFunc = function() {
+            setTimeout(moveNextTabFunc, 1);
+        };
+        moveNextTabFunc = function() {
+            if (tabIds.length == 0) {
+                // All done
+                let s = `Moved ${pluralize(origTabIds.length, "tab")} to tab ${tabInfo.title}`;
+                setStatusBarMessage(s);
+                tablist.querySelectorAll("li.selected").forEach(function(node) {
+                    node.classList.remove('selected');
+                });
+                setTimeout(populateTabListAndReselect, 50);
+                return;
+            }
+            let tabIdToMove = tabIds.pop();
+            if (targetIndex != -1 && indexAdjuster_cb == offsetTargetIndexIfNeeded && tabIdsToLeftOfTarget.indexOf(tabIdToMove) >= 0) {
+                targetIndex -= 1;
+            }
+            moveProperties.index = targetIndex;
+	    console.log(`QQQ: move tab ${tabIdToMove} to window ${targetWindowID}, tab index ${targetIndex}`);
+            browser.tabs.move(tabIdToMove, moveProperties).then(deferredMoveNextTabFunc, reportErr);
+
+        };
+        moveNextTabFunc();
+    } catch(ex) {
+        console.log("movetabtester: Error moving tabs: " + ex);
+    }
+}
+
+function populateWindowPicker() {
+    try {
+	while (selectWindowTargetWidget.lastChild) {
+	    selectWindowTargetWidget.removeChild(selectWindowTargetWidget.lastChild);
+	}
+	var i = 0;
+	for (var windowInfo of g_windowInfoArray) {
+            i += 1;
+            let optionElement = document.createElement("option");
+            optionElement.value = windowInfo.id;
+            optionElement.text = `[${i}] ${getWindowTitle(windowInfo)}`;
+            if (i == lastSelectedWindow) {
+		optionElement.selected = true;
+		setTimeout(populateTabPicker, 1);
+            }
+            selectWindowTargetWidget.appendChild(optionElement);
+	}
+    } catch(ex) { console.log(ex); }
+}
+
+function populateTabPicker() {
+    try {
+	let options = selectWindowTargetWidget.selectedOptions;
+    if (options.length == 0) {
+        alert("No target window to move tabs to");
+        return;
+    }
+	let targetWindowID = parseInt(options.item(0).value, 10);
+	let targetWindow = g_windowInfoArray.find((windowInfo) => (windowInfo.id == targetWindowID));
+	
+	while (selectTabTargetWidget.lastChild) {
+	    selectTabTargetWidget.removeChild(selectTabTargetWidget.lastChild);
+	}
+	var i = 0;
+	targetWindow.tabs.forEach((tabInfo) => {
+            let optionElement = document.createElement("option");
+            optionElement.value = tabInfo.index;
+            optionElement.text = `[${i}] ${tabInfo.title}`;
+            if (i == lastSelectedTab) {
+		optionElement.selected = true;
+            }
+            i += 1;
+            selectTabTargetWidget.appendChild(optionElement);
+	});
+        let optionElement = document.createElement("option");
+        optionElement.value = -1;
+        optionElement.text = `[END]`;
+        selectTabTargetWidget.appendChild(optionElement);
+    } catch(ex) { console.log(ex); }
+}
+
+function getWindowTitle(windowInfo) {
+<% if ENV['TARGET'] == 'firefox' %>
+    return windowInfo.title;
+<% else %>
+    return windowInfo.tabs[0].title
+<% end %>
+}
+
+function doMouseOver(eventData) {
+    if (!eventData.currentTarget.disabled) {
+        $(this).addClass("highlighted");
+    }
+}
+
+function doMouseOut(eventData) {
+    $(this).removeClass("highlighted");
+    $(this).removeClass("pressed");
+}
+
+function doMouseDown(eventData) {
+    if (!eventData.currentTarget.disabled) {
+        $(this).addClass("pressed");
+    }
+}
+
+function doMouseUp(eventData) {
+    $(this).removeClass("pressed");
+}
+
+return {
+    init: function () {
+        return init();
+    },
+    __BOSCO__ : null
+};
+
+});
+
+var thMain = null;
+$(document).ready(function() {
+  thMain = thMainFunc();
+  thMain.init();
+});
+

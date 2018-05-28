@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!-- movetabtester.html -:- See LICENSE.txt for copyright and license details. -->
+<html lang="en">
+  <head>
+    <link href="movetabtester.css" rel="stylesheet" type="text/css" />
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <script src="jquery-3.2.1.min.js"></script>
+<% if ENV['TARGET'] == 'chrome' %>
+  <script src="browser-polyfill.min.js"></script>
+<% end %>
+  <script src="movetabtester.js"></script>
+<body id="body">
+  <div id="form">
+    <div id="main">
+      <ul id="list">
+      </ul>
+    </div>
+    <h3>Users Manual</h3>
+    <p>Select 1 or more tabs to move from above list. Choose the target tab by selecting its window and tab in the dropdowns below. Hover over each of the buttons below to see how they move the tabs</p>
+    <div id="buttons" class="buttondiv">
+      <button type="button" class="button movetabs" 
+title="move all tabs using the tabs.move(tabIds, moveProperties) to the left of the selected tab"
+id="moveNaiveFull">Naive All</button>
+      <button type="button" class="button movetabs" 
+title="move each tab starting at the end one at a time to the left of the selected tab"
+id="moveNaiveIndividually">Naive Individually</button>
+      <button type="button" class="button movetabs" 
+title="move all tabs using tabs.move(tabIds, moveProperties) and if all tabs are to the left of the target, sub 1 from targetIndex"
+id="moveOffsetFull">Offset One All</button>
+      <button type="button" class="button movetabs" 
+title="move each tab starting at the end one at a time and allow for source tab to left of target tab"
+id="moveOffsetIndividually">Offset One Individually</button>
+    </div>
+      <div id="selectWindowContainer" >
+	<label for="windowList">Select the target window</label>
+        <select name="windowList" id="windowList">
+        </select>
+      </div>
+      <div id="selectTabContainer" >
+	<label for="tabList">Select the tab to move selected tabs to, or [END] to move tabs to end</label>
+        <select name="tabList" id="tabList">
+        </select>
+      </div>
+      
+      <div id="statusbar" class="hide">
+        <p id="statusbar-p">
+          Tabhunter ...
+        </p>
+      </div>
+    </div>
+  </div>
+</body>

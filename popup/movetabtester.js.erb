@@ -17,6 +17,7 @@ var g_currentItemHeight = null;
 const DEFAULT_BASE_FONT_SIZE = 12;
 
 var moveButtons = {};
+var rebuildListButton, removeFromListButton;
 
 const SHIFT_KEY = 1;
 const CTRL_KEY = 2;
@@ -32,6 +33,10 @@ function init() {
 	 moveButtons[name] = b;
 	 b.addEventListener("mouseup", doMoveFunc[name]);
      });
+    removeFromListButton = document.getElementById("removeFromList")
+	removeFromListButton.addEventListener("mouseup", doRemoveFromList);
+    rebuildListButton = document.getElementById("rebuildList")
+	rebuildListButton.addEventListener("mouseup", doRebuildList);
 
     selectWindowTargetWidget = document.getElementById("windowList");
     selectTabTargetWidget =  document.getElementById("tabList");
@@ -452,6 +457,40 @@ function doMouseDown(eventData) {
 
 function doMouseUp(eventData) {
     $(this).removeClass("pressed");
+}
+
+function doRemoveFromList(event) {
+    var selectedItems = getSelectedItemsJQ();
+    var clientWidth = selectedItems[0].clientWidth - 100;
+    let doDeleteItem = function(item, i, cb) {
+        const delay = 10;
+        const steps = 30;
+        if (i > 1) {
+            //    item.classList.remove('jib' + (i - 1));
+        }
+        if (i >= steps * 0.8) {
+            item.parentNode.removeChild(item);
+            setTimeout(cb, 300);
+        } else {
+            let offset = (20 + (Math.round((i * clientWidth) / steps)));
+            item.style.paddingLeft = offset + 'px';
+            item.style.backgroundPositionX = (offset - 20) + 'px';
+            setTimeout(doDeleteItem, delay, item, i + 1, cb);
+        }
+    };
+
+    let deleteNextItem = function() {
+        if (selectedItems.length > 0) {
+            doDeleteItem(selectedItems.shift(), 1, deleteNextItem);
+        } else {
+            console.log(`Deletion done`);
+        }
+    }
+    deleteNextItem();
+}
+
+function doRebuildList(event) {
+    populateTabList();
 }
 
 return {
